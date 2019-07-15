@@ -44,6 +44,11 @@ my $INT_Loglevel = defined($CFG->{"setup"}->{"loglevel"}) ? $CFG->{"setup"}->{"l
 my $INT_Logsize  = defined($CFG->{"setup"}->{"logsize"})  ? $CFG->{"setup"}->{"logsize"}  : 1024;
 my $STR_Logfile  = defined($CFG->{"setup"}->{"logfile"})  ? $CFG->{"setup"}->{"logfile"}  : $STR_Prgname.".log";
 my $INT_debug    = defined($CFG->{"setup"}->{"debug"})    ? $CFG->{"setup"}->{"debug"}    : 0;
+my $STR_Login    = $CFG->{"setup"}->{"nim_login"} || "administrator";
+my $STR_Password = $CFG->{"setup"}->{"nim_password"};
+
+# Authenticate if nim_login & nim_password are defined
+nimLogin("$STR_Login","$STR_Password") if defined($STR_Login) && defined($STR_Password);
 
 #====================================================
 # Log File
