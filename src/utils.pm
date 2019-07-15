@@ -4,6 +4,9 @@ package src::utils;
 use strict;
 use Exporter qw(import);
 
+# CA UIM Packages
+use Nimbus::API;
+
 # Third-party packages
 use MIME::Base64;
 use JSON;
@@ -16,11 +19,8 @@ use Data::Dumper;
 # Export utils functions
 our @EXPORT_OK = qw(getMasterDeviceId);
 
-# CONSTANTS
-my $STR_API = 'http://10.130.37.121:8080';
-
 sub getMasterDeviceId {
-    my ($Server) = @_;
+    my ($HTTPAddr, $Server) = @_;
 
     my $getinfo = REST::Client->new();
     my $auth = encode_base64("maintenance:m8te-nance");
@@ -28,13 +28,13 @@ sub getMasterDeviceId {
         'Accept'        => 'application/json',
         'Authorization' => 'Basic '.$auth
     };
-    $getinfo->setHost($STR_API);
+    $getinfo->setHost($HTTPAddr);
     my $getinfoURL = '/uimapi/devices?type=perspective&name='.$Server.'&probeName=controller';
-    $retry = 1;
+    my $retry = 1;
     my @json = ();
 
     for (1..3) {
-        $getinfo->GET($getinfoURL, header);
+        $getinfo->GET($getinfoURL, $header);
         my $rc = $getinfo->responseCode();
         nimLog(0, "HTTP Request failed with the return code: $rc") if $rc ne 200;
         if ($rc eq 200) {
@@ -46,7 +46,7 @@ sub getMasterDeviceId {
         return undef if $retry eq 3;
 
         $retry++;
-        sleep 10;
+        sleep 3;
     }
 
     return $json[0]{'masterDeviceId'};
