@@ -206,26 +206,22 @@ $_->detach() for @thr;
 sub managed {
     my ($hMsg, $serverName) = @_;
     nimLog(3, "managed callback triggered with server '$serverName'");
-    $MNT_QUEUE->enqueue({
-        server => $serverName, state => MANAGED
-    });
 
+    $MNT_QUEUE->enqueue({ server => $serverName, state => MANAGED });
     nimSendReply($hMsg);
 }
 
 sub unmanaged {
     my ($hMsg, $serverName) = @_;
     nimLog(3, "unmanaged callback triggered with server '$serverName'");
-    $MNT_QUEUE->enqueue({
-        server => $serverName, state => UNMANAGED
-    });
 
+    $MNT_QUEUE->enqueue({ server => $serverName, state => UNMANAGED });
     nimSendReply($hMsg);
 }
 
 sub get_master_device_id {
     my ($hMsg, $serverName) = @_;
-    nimLog(3, "Get Master Device ID from hostname: '$serverName'");
+    nimLog(3, "Get Master Device ID for hostname: '$serverName'");
 
     my $MasterDeviceID = AXA::utils::getMasterDeviceId($serverName);
     if (defined $MasterDeviceID) {
@@ -255,7 +251,5 @@ if ($sess->server (NIMPORT_ANY,\&timeout,\&restart)==0) {
     $sess->addCallback("managed", "hostname");
     $sess->addCallback("unmanaged", "hostname");
     $sess->addCallback("get_master_device_id", "hostname");
-
-    nimLog(3, "Dispatch timeout callback at 10,000ms");
-    $sess->dispatch(10000);
+    $sess->dispatch();
 }
