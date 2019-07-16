@@ -20,7 +20,7 @@ use Data::Dumper;
 # Export utils functions
 our @EXPORT_OK = qw(getMasterDeviceId parseAlarmVariable generateAlarm);
 
-our $AUTH = "maintenance:m8te-nance";
+our $AUTH = "";
 our $HTTP_ADDR = "";
 
 sub getMasterDeviceId {
