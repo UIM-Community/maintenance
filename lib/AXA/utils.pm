@@ -25,25 +25,29 @@ our $HTTP_ADDR = "";
 
 sub getMasterDeviceId {
     my ($Server) = @_;
-
-    my $getinfo = REST::Client->new();
+    my $masterDeviceId = undef;
     my $header = {
         'Accept'        => 'application/json',
         'Authorization' => 'Basic '.encode_base64($AUTH)
     };
-    $getinfo->setHost($HTTP_ADDR);
-    my @json = ();
 
-    $getinfo->GET('/uimapi/devices?type=perspective&name='.$Server.'&probeName=controller', $header);
-    my $rc = $getinfo->responseCode();
-    nimLog(0, "HTTP Request failed with the return code: $rc") if $rc ne 200;
-    if ($rc eq 200) {
-        @json = @{ decode_json($getinfo->responseContent()) };
-        return $json[0]{'masterDeviceId'} if defined($json[0]{'masterDeviceId'});
-        nimLog(1, "Failed to find the 'Master Device ID' !");
+    my $req = REST::Client->new();
+    $req->setHost($HTTP_ADDR);
+    $req->setTimeout(10);
+    $req->GET('/uimapi/devices?type=perspective&name='.$Server.'&probeName=controller', $header);
+    my $statusCode = $req->responseCode();
+    if ($statusCode eq "200") {
+        my @json = @{
+            decode_json($req->responseContent())
+        };
+        $masterDeviceId = $json[0]{'masterDeviceId'};
     }
 
-    return undef;
+    return {
+        devId => $masterDeviceId,
+        statusCode => $statusCode,
+        reason => $statusCode eq "200" ? undef : $req->responseContent()
+    };
 }
 
 sub parseAlarmVariable {

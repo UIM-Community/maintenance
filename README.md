@@ -26,16 +26,24 @@ CA UIM - Maintenance probe
       severity = 1
       subsystem = 1.1.
       supp_key = cbfail_$callback_$source
-      variables = $callback,$source
+      variables = $callback,$source,$robot
    </callback_failed>
-   <device_id_failed>
-      message = HTTP Request to '$api' failed for source '$source'
+   <device_not_found>
+      message = Unable to found Master Device ID for hostname '$source'
       token = 
       severity = 1
       subsystem = 1.1.
       supp_key = device_id_failed_$source
-      variables = $api,$source
-   </device_id_failed>
+      variables = $api,$source,$robot
+   </device_not_found>
+   <http_request_fail>
+      message = HTTP request to '$api' failed with code $statusCode for hostname '$source'
+      token = 
+      severity = 1
+      subsystem = 1.1.
+      supp_key = device_id_failed_$source
+      variables = $api,$source,$robot,$statusCode
+   </http_request_fail>
 </messages>
 ```
 

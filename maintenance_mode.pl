@@ -73,10 +73,10 @@ nimLog(0, "****************[ Starting ]****************");
 nimLog(0, "Probe $STR_Prgname version $STR_Version");
 nimLog(0, "AXA Invest Manager, Copyright @ 2018-2020");
 
-# Execute the routine scriptDieHandler if the script die for any reasons
+#====================================================
+# DIE HANDLER
+#====================================================
 $SIG{__DIE__} = \&scriptDieHandler;
-
-# Routine triggered when the script have to die
 sub scriptDieHandler {
     my ($err) = @_;
     print STDERR "$err\n";
@@ -84,13 +84,59 @@ sub scriptDieHandler {
     exit(1);
 }
 
-# Retrieve local agent info
+#====================================================
+# Create alarm
+#====================================================
+sub createAlarm {
+    my ($alarmName, $robot, $source, $addVars) = @_;
+    my $currAlarm = $MESSAGES->{$alarmName};
+
+    my $defaultVars = {
+        robot => $robot, source => $source
+    };
+    $defaultVars = { %$defaultVars, %$addVars };
+    my $suppkey = AXA::utils::parseAlarmVariable($currAlarm->{supp_key}, $defaultVars);
+    my $message = AXA::utils::parseAlarmVariable($currAlarm->{message}, $defaultVars); 
+
+    my ($PDSAlarm, $nimid) = AXA::utils::generateAlarm("alarm", {
+        robot       => $robot,
+        source      => $source,
+        met_id      => "",
+        dev_id      => "",
+        hubName     => $localAgent->{hubname},
+        domain      => $localAgent->{domain},
+        usertag1    => $localAgent->{os_user1},
+        usertag2    => $localAgent->{os_user2},
+        severity    => $currAlarm->{severity},
+        subsys      => $currAlarm->{subsystem},
+        origin      => $MESSAGES->{default_origin},
+        probe       => $STR_Prgname,
+        message     => $message,
+        supp_key    => $suppkey,
+        suppression => $suppkey
+    });
+    nimLog(3, "Generate new (raw) alarm with id $nimid");
+
+    # Launch alarm!
+    my ($RC) = nimRequest($localAgent->{robotname}, 48001, "post_raw", $PDSAlarm->data);
+    if($RC != NIME_OK) {
+        my $errorTxt = nimError2Txt($RC);
+        nimLog(2, "Failed to generate alarm, RC => $RC :: $errorTxt");
+    }
+}
+
+#====================================================
+# Retrieve local NimSoft agent
+#====================================================
 my ($RC_INFO, $getInfoPDS) = nimNamedRequest("controller", "get_info");
 scriptDieHandler(
     "Failed to establish a communication with the local controller probe!"
 ) if $RC_INFO != NIME_OK;
 my $localAgent = Nimbus::PDS->new($getInfoPDS)->asHash();
 
+#====================================================
+# Threads pools
+#====================================================
 my $thrHandler;
 $thrHandler = sub {
     nimLog(3, "Thread started!");
@@ -99,44 +145,22 @@ $thrHandler = sub {
         my $State = $options->{state};
 
         # Retrieve Server Master Id
-        my $MasterDeviceID = AXA::utils::getMasterDeviceId($Server);
-        if (!defined($MasterDeviceID)) {
-            nimLog(0, "[$Server] failed to retrieve MasterDeviceID");
-
-            my $currAlarm = $MESSAGES->{device_id_failed};
-            my $vars = {
-                api => $HTTP_ADDR,
-                source => $Server
-            };
-            my $suppkey = AXA::utils::parseAlarmVariable($currAlarm->{supp_key}, $vars);
-            my $message = AXA::utils::parseAlarmVariable($currAlarm->{message}, $vars); 
-
-            my ($PDSAlarm, $nimid) = AXA::utils::generateAlarm("alarm", {
-                robot       => $localAgent->{robotname},
-                source      => $Server,
-                met_id      => "",
-                dev_id      => "",
-                hubName     => $localAgent->{hubname},
-                domain      => $localAgent->{domain},
-                usertag1    => $localAgent->{os_user1},
-                usertag2    => $localAgent->{os_user2},
-                severity    => $currAlarm->{severity},
-                subsys      => $currAlarm->{subsystem},
-                origin      => $MESSAGES->{default_origin},
-                probe       => $STR_Prgname,
-                message     => $message,
-                supp_key    => $suppkey,
-                suppression => $suppkey
+        my $result = AXA::utils::getMasterDeviceId($Server);
+        my $MasterDeviceID = $result->{devId};
+        if ($result->{statusCode} eq "200" && not defined($MasterDeviceID)) {
+            nimLog(0, "[$Server] MasterDeviceID not found");
+            createAlarm("device_not_found", $localAgent->{robotname}, $Server, {
+                api => $HTTP_ADDR
             });
-            nimLog(3, "Generate new (raw) alarm with id $nimid");
-
-            # Launch alarm!
-            my ($RC) = nimRequest($localAgent->{robotname}, 48001, "post_raw", $PDSAlarm->data);
-            if($RC != NIME_OK) {
-                my $errorTxt = nimError2Txt($RC);
-                nimLog(2, "Failed to generate alarm, RC => $RC :: $errorTxt");
-            }
             next;
+        }
+        else if ($result->{statusCode} ne "200") {
+            nimLog(0, "[$Server] http request for MasterDeviceID failed (reason: $result->{statusCode})");
+            createAlarm("http_request_fail", $localAgent->{robotname}, $Server, {
+                api => $HTTP_ADDR,
+                statusCode => $result->{statusCode},
+                reason => $result->{reason}
+            });
         }
         nimLog(3, "[$Server] MasterDeviceID => $MasterDeviceID");
 
@@ -150,41 +174,10 @@ $thrHandler = sub {
         my ($RC, $RES) = nimNamedRequest($CALLBACK_ADDR, $callbackName, $DATA->data);
         if ($RC != NIME_OK) {
             nimLog(0, "The Callback request failed. nimNamedRequest() rc: $RC.");
-
-            my $currAlarm = $MESSAGES->{callback_failed};
-            my $vars = {
+            createAlarm("callback_failed", $Server, $localAgent->{robotname}, {
                 callback => $callbackName,
-                source => $Server
-            };
-            my $suppkey = AXA::utils::parseAlarmVariable($currAlarm->{supp_key}, $vars);
-            my $message = AXA::utils::parseAlarmVariable($currAlarm->{message}, $vars); 
-
-            my ($PDSAlarm, $nimid) = AXA::utils::generateAlarm("alarm", {
-                robot       => $Server,
-                source      => $localAgent->{robotname},
-                met_id      => "",
-                dev_id      => "",
-                hubName     => $localAgent->{hubname},
-                domain      => $localAgent->{domain},
-                usertag1    => $localAgent->{os_user1},
-                usertag2    => $localAgent->{os_user2},
-                severity    => $currAlarm->{severity},
-                subsys      => $currAlarm->{subsystem},
-                origin      => $MESSAGES->{default_origin},
-                probe       => $STR_Prgname,
-                message     => $message,
-                supp_key    => $suppkey,
-                suppression => $suppkey
             });
-            nimLog(3, "Generate new (raw) alarm with id $nimid");
 
-            # Launch alarm!
-            my ($RC) = nimRequest($localAgent->{robotname}, 48001, "post_raw", $PDSAlarm->data);
-            if($RC != NIME_OK) {
-                my $errorTxt = nimError2Txt($RC);
-                nimLog(2, "Failed to generate alarm, RC => $RC :: $errorTxt");
-            }
-        
             next;
         }
 
@@ -204,33 +197,39 @@ $_->detach() for @thr;
 
 # CALLBACK Declarations
 sub managed {
-    my ($hMsg, $serverName) = @_;
-    nimLog(3, "managed callback triggered with server '$serverName'");
+    my ($hMsg, $hostname) = @_;
+    nimLog(3, "managed callback triggered with hostname '$hostname'");
 
-    $MNT_QUEUE->enqueue({ server => $serverName, state => MANAGED });
+    $MNT_QUEUE->enqueue({ server => $hostname, state => MANAGED });
     nimSendReply($hMsg);
 }
 
 sub unmanaged {
-    my ($hMsg, $serverName) = @_;
-    nimLog(3, "unmanaged callback triggered with server '$serverName'");
+    my ($hMsg, $hostname) = @_;
+    nimLog(3, "unmanaged callback triggered with hostname '$hostname'");
 
-    $MNT_QUEUE->enqueue({ server => $serverName, state => UNMANAGED });
+    $MNT_QUEUE->enqueue({ server => $hostname, state => UNMANAGED });
     nimSendReply($hMsg);
 }
 
 sub get_master_device_id {
-    my ($hMsg, $serverName) = @_;
-    nimLog(3, "Get Master Device ID for hostname: '$serverName'");
+    my ($hMsg, $hostname) = @_;
+    nimLog(3, "Get Master Device ID for hostname: '$hostname'");
 
-    my $MasterDeviceID = AXA::utils::getMasterDeviceId($serverName);
-    if (defined $MasterDeviceID) {
-        my $PDS = Nimbus::PDS->new(); 
-        $PDS->number("id", $MasterDeviceID);
-
-        nimSendReply($hMsg, NIME_OK, $PDS->data);
+    my $result = AXA::utils::getMasterDeviceId($hostname);
+    my $PDS = Nimbus::PDS->new();
+    if (result->{statusCode} eq "200") {
+        if (defined $result->{devId}) {
+            $PDS->number("id", $result->{devId});
+            nimSendReply($hMsg, NIME_OK, $PDS->data);
+        }
+        else {
+            $PDS->string("reason", "Unable to found Device ID for hostname '$hostname'");
+            nimSendReply($hMsg, NIME_ERROR, $PDS->data);
+        }
     }
     else {
+        $PDS->string("reason", $result->{reason});
         nimSendReply($hMsg, NIME_ERROR);
     }
 }
